@@ -2,10 +2,11 @@ import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
+import os
 
 
 env = gym.make('HalfCheetah-v5')
-env_eval = gym.make('HalfCheetah-v5', render_mode="human")
+# env_eval = gym.make('HalfCheetah-v5', render_mode="human")
 # obs, _ = env.reset()
 # env.render()
 
@@ -16,9 +17,11 @@ print(f"Action space: {env.action_space}")
 print(f"Sample action: {env.action_space.sample()}")
 
 gamma = 0.99
-learning_rate = 3e-4
-num_episodes = 1000
-batch_size = 64
+learning_rate = 0.001
+num_episodes = 1500
+episodes_per_batch = 50
+baseline = 0.0
+baseline_momentum = 0.9
 
 class PolicyNetwork(tf.keras.Model):
     def __init__(self, hidden_units=128):
@@ -48,11 +51,14 @@ def compute_returns(rewards, gamma):
         returns[t] = running_return
     return returns
 
-def train_step(states, raw_actions, returns):
+@tf.function
+def train_step(states, raw_actions, returns, baseline):
     # Ensure inputs are explicitly float32
     states = tf.cast(states, tf.float32)
     raw_actions = tf.cast(raw_actions, tf.float32)
     returns = tf.cast(returns, tf.float32)
+    
+    advantages = returns - tf.cast(baseline, tf.float32)
     
     with tf.GradientTape() as tape:
         # 1. Get mean and standard deviation from the policy network
@@ -88,57 +94,60 @@ def train_step(states, raw_actions, returns):
     
     return loss
 
-for episode in range(num_episodes):
-    
-    if episode % 100 == 0:
-        print(f"\n--- Visualizing Policy at Episode {episode} ---")
-        eval_state, _ = env_eval.reset()
-        eval_done = False
-        eval_reward = 0
+for update in range(num_episodes // episodes_per_batch):
         
-        while not eval_done:
-            state_input = np.array(eval_state, dtype=np.float32).reshape(1, -1)
-            mu, _ = policy(state_input)  # Exploit the learned center point (no sampling noise)
-            eval_action = np.tanh(mu.numpy()[0])
+    batch_states, batch_raw_actions, batch_returns = [], [], []
+    batch_episode_rewards = []  # just for logging
+
+    for _ in range(episodes_per_batch):
+    
+        state, _ = env.reset()
+        done = False
+        states, raw_actions, rewards = [], [], []
+        
+        while not done:
+            state_input = np.array(state, dtype = np.float32).reshape(1,-1)
             
-            eval_state, reward, terminated, truncated, _ = env_eval.step(eval_action)
-            eval_done = terminated or truncated
-            eval_reward += reward
-        print(f"Eval Total Reward: {eval_reward:.2f}\n")
-        
-    state, _ = env.reset()
-    done = False
-    states, raw_actions, rewards = [], [], []
+            mu, sigma = policy(state_input)
+            mu = mu.numpy()[0]
+            sigma = sigma.numpy()[0]
+            
+            raw_action = mu + sigma * np.random.normal(size=mu.shape)
+            
+            env_action = np.tanh(raw_action)
+            
+            next_state, reward, terminated, truncated, _ = env.step(env_action)
+            done = terminated or truncated
+            
+            states.append(state_input[0])
+            raw_actions.append(raw_action)
+            rewards.append(reward)
+            
+            state = next_state
     
-    while not done:
-        state_input = np.array(state, dtype = np.float32).reshape(1,-1)
-        
-        mu, sigma = policy(state_input)
-        mu = mu.numpy()[0]
-        sigma = sigma.numpy()[0]
-        
-        raw_action = mu + sigma * np.random.normal(size=mu.shape)
-        
-        env_action = np.tanh(raw_action)
-        
-        next_state, reward, terminated, truncated, _ = env.step(env_action)
-        done = terminated or truncated
-        
-        states.append(state_input[0])
-        raw_actions.append(raw_action)
-        rewards.append(reward)
-        
-        state = next_state
-        
-    returns = compute_returns(rewards, gamma)
-    returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-9)
+        returns = compute_returns(rewards, gamma)
+
+        batch_states.append(np.vstack(states))
+        batch_raw_actions.append(np.vstack(raw_actions))
+        batch_returns.append(returns)
+        batch_episode_rewards.append(sum(rewards))
+
+    # Pool everything from all episodes_per_batch episodes together
+    states_batch = np.vstack(batch_states)
+    raw_actions_batch = np.vstack(batch_raw_actions)
+    returns_batch = np.concatenate(batch_returns)
     
-    states_batch = np.vstack(states)
-    raw_actions_batch = np.vstack(raw_actions)
+    baseline = baseline_momentum * baseline + (1 - baseline_momentum) * np.mean(returns_batch)
     
-    train_step(states_batch, raw_actions_batch, returns)
+    loss = train_step(states_batch, raw_actions_batch, returns_batch, baseline)
     
-    if episode % 100 == 0:
-        print(f"Episode {episode}/{num_episodes}")
+    if update % 2 == 0:
+        avg_reward = np.mean(batch_episode_rewards)
+        print(f"Update {update}, avg episode reward: {avg_reward:.2f}, loss: {loss:.4f}")
         
+        
+save_dir = "models"
+os.makedirs(save_dir, exist_ok=True)
+policy.save_weights(os.path.join(save_dir, f"halfcheetah_reinforce_baseline_batch{episodes_per_batch}.weights.h5"))
+print(f"Saved policy weights to {save_dir}")
 env.close()
