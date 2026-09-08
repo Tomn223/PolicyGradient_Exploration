@@ -5,8 +5,6 @@ from tensorflow.keras import layers
 
 
 env = gym.make('HalfCheetah-v5')
-# obs, _ = env.reset()
-# env.render()
 
 print(f"Observation space: {env.observation_space}")
 print(f"Sample observation: {env.observation_space.sample()}")
@@ -23,7 +21,7 @@ class PolicyNetwork(tf.keras.Model):
     def __init__(self, hidden_units=128):
         super(PolicyNetwork, self).__init__()
         self.dense1 = layers.Dense(hidden_units, activation='relu')
-        self.dense2 = layers.Dense(hidden_units, activation='relu') # Added a 2nd hidden layer for complex locomotion
+        self.dense2 = layers.Dense(hidden_units, activation='relu')
         self.mu_layer = tf.keras.layers.Dense(env.action_space.shape[0], activation=None)
         self.sigma_layer = tf.keras.layers.Dense(env.action_space.shape[0], activation='softplus')
         
@@ -48,7 +46,6 @@ def compute_returns(rewards, gamma):
     return returns
 
 def train_step(states, raw_actions, returns):
-    # Ensure inputs are explicitly float32
     states = tf.cast(states, tf.float32)
     raw_actions = tf.cast(raw_actions, tf.float32)
     returns = tf.cast(returns, tf.float32)
@@ -59,20 +56,14 @@ def train_step(states, raw_actions, returns):
         
         # 2. Calculate the log-probability under the standard Gaussian distribution
         variance = tf.square(sigma)
-        
-        # FIX: Explicitly cast 2 * pi to float32
-        pi_const = tf.constant(2.0 * 3.14159265359, dtype=tf.float32)
+        pi_const = tf.constant(3.14159265359, dtype=tf.float32)
         
         gaussian_log_probs = -0.5 * (tf.square(raw_actions - mu) / variance + 
-                                     tf.math.log(pi_const * variance))
+                                     tf.math.log(2.0 * pi_const * variance))
         
         # 3. Apply the Squashing Correction (Change of Variables)
-        # FIX: Ensure 1.0 and 1e-6 constants are float32
         tanh_u = tf.math.tanh(raw_actions)
         squash_correction = tf.math.log(tf.constant(1.0, dtype=tf.float32) - tf.square(tanh_u) + tf.constant(1e-6, dtype=tf.float32))
-        
-        # Corrected log prob for each dimension
-        # Note: We subtract squash_correction based on the change of variables math
         corrected_log_probs = gaussian_log_probs - squash_correction
         
         # 4. Sum across all action dimensions
@@ -88,22 +79,6 @@ def train_step(states, raw_actions, returns):
     return loss
 
 for episode in range(num_episodes):
-    
-    if episode % 100 == 0:
-        print(f"\n--- Visualizing Policy at Episode {episode} ---")
-        eval_state, _ = env_eval.reset()
-        eval_done = False
-        eval_reward = 0
-        
-        while not eval_done:
-            state_input = np.array(eval_state, dtype=np.float32).reshape(1, -1)
-            mu, _ = policy(state_input)  # Exploit the learned center point (no sampling noise)
-            eval_action = np.tanh(mu.numpy()[0])
-            
-            eval_state, reward, terminated, truncated, _ = env_eval.step(eval_action)
-            eval_done = terminated or truncated
-            eval_reward += reward
-        print(f"Eval Total Reward: {eval_reward:.2f}\n")
         
     state, _ = env.reset()
     done = False

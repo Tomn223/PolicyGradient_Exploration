@@ -44,7 +44,7 @@ env = gym.make('HalfCheetah-v5', render_mode="human")
 policy = ActorCritic()
 dummy_input = np.zeros((1, env.observation_space.shape[0]), dtype=np.float32)
 policy(dummy_input)  # builds the model so weights can be loaded into it
-policy.load_weights(os.path.join(save_dir, "halfcheetah_actor_critic.weights.h5"))
+policy.load_weights(os.path.join(save_dir, "halfcheetah_actor_critic_200.weights.h5"))
 
 eval_state, _ = env.reset()
 eval_done = False

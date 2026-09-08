@@ -165,7 +165,7 @@ model = ActorCritic()
 optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
 
 # min_episodes_criterion = 100
-max_episodes = 250
+max_episodes = 200
 # max_steps_per_episode = 5000
 
 running_reward = 0
@@ -175,11 +175,11 @@ gamma = 0.99
 
 # Keep the last episodes reward
 # episodes_reward: collections.deque = collections.deque(maxlen=min_episodes_criterion)
-reward_window = collections.deque(maxlen=10)
+print_interval = 10
+reward_window = collections.deque(maxlen=print_interval)
 
 reward_history = []
 
-print_interval = 10
 
 t = tqdm.trange(max_episodes)
 for i in t:
@@ -271,6 +271,6 @@ for i in t:
 
 save_dir = "models"
 os.makedirs(save_dir, exist_ok=True)
-model.save_weights(os.path.join(save_dir, f"halfcheetah_actor_critic.weights.h5"))
+model.save_weights(os.path.join(save_dir, f"halfcheetah_actor_critic_{max_episodes}.weights.h5"))
 print(f"Saved policy weights to {save_dir}")
 env.close()
