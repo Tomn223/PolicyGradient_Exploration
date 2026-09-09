@@ -31,6 +31,7 @@ class REINFORCE:
             baseline=False,
             gamma=0.99,
             learning_rate=0.001,
+            entropy_coef=0.001,
             baseline_momentum=0.9,
             num_episodes=1500,
             episodes_per_batch=50,
@@ -44,6 +45,7 @@ class REINFORCE:
         self.baseline_on = baseline
         self.baseline = 0.0
         self.baseline_momentum = baseline_momentum if baseline else None
+        self.entropy_coef = entropy_coef if entropy else 0.0
         self.gamma = gamma
         self.learning_rate = learning_rate
         self.num_episodes=num_episodes
@@ -71,26 +73,29 @@ class REINFORCE:
             # 2. Calculate the log-probability under the standard Gaussian distribution
             variance = tf.square(sigma)
             
-            # FIX: Explicitly cast 2 * pi to float32
-            pi_const = tf.constant(2.0 * 3.14159265359, dtype=tf.float32)
+            # Explicitly cast pi to float32
+            two_pi_const = tf.constant(2.0 * 3.14159265359, dtype=tf.float32)
             
             gaussian_log_probs = -0.5 * (tf.square(raw_actions - mu) / variance + 
-                                        tf.math.log(pi_const * variance))
+                                        tf.math.log(two_pi_const * variance))
             
             # 3. Apply the Squashing Correction (Change of Variables)
-            # FIX: Ensure 1.0 and 1e-6 constants are float32
             tanh_u = tf.math.tanh(raw_actions)
             squash_correction = tf.math.log(tf.constant(1.0, dtype=tf.float32) - tf.square(tanh_u) + tf.constant(1e-6, dtype=tf.float32))
-            
-            # Corrected log prob for each dimension
-            # Note: We subtract squash_correction based on the change of variables math
             corrected_log_probs = gaussian_log_probs - squash_correction
             
             # 4. Sum across all action dimensions
             action_log_probs = tf.reduce_sum(corrected_log_probs, axis=-1)
             
+            # Entropy Bonus
+            e_const = tf.constant(2.71828182846, dtype=tf.float32)
+            gaussian_entropy = 0.5 * tf.math.log(two_pi_const * e_const * variance)
+            total_entropy = tf.reduce_sum(gaussian_entropy, axis=-1)
+            mean_entropy = tf.reduce_mean(total_entropy)
+    
             # 5. Calculate REINFORCE loss
-            loss = -tf.reduce_mean(action_log_probs * advantages)
+            pg_loss = -tf.reduce_mean(action_log_probs * advantages)
+            loss = pg_loss - self.entropy_coef * mean_entropy  # entropy_coef is 0 if entropy is off, so no impact
             
         # 6. Optimize the policy weights
         grads = tape.gradient(loss, self.policy.trainable_variables)
@@ -99,9 +104,15 @@ class REINFORCE:
         return loss
 
     def train(self):
+        
+        self.log_avg_rewards = [] # average episode reward per update
+        self.log_losses = [] # loss per update
+        self.log_all_rewards = [] # every episode reward
+        self.log_baselines = [] # baseline value per update (if on)
+        
         for update in range(self.num_episodes // self.episodes_per_batch):
             batch_states, batch_raw_actions, batch_returns = [], [], []
-            batch_episode_rewards = []  # just for logging
+            batch_episode_rewards = []
 
             for _ in range(self.episodes_per_batch):
             
@@ -149,8 +160,15 @@ class REINFORCE:
                 
             loss = self.train_step(states_batch, raw_actions_batch, advantages)
             
+            avg_reward = np.mean(batch_episode_rewards)
+            
+            self.log_avg_rewards.append(float(avg_reward))
+            self.log_losses.append(float(loss.numpy()))
+            self.log_all_rewards.extend(batch_episode_rewards)
+            if self.baseline_on:
+                self.log_baselines.append(float(self.baseline))
+            
             if update % 2 == 0:
-                avg_reward = np.mean(batch_episode_rewards)
                 print(f"Update {update}, avg episode reward: {avg_reward:.2f}, loss: {loss:.4f}")
         
     def save(self, base_path):
@@ -167,6 +185,16 @@ class REINFORCE:
         )
         
         print(f"Model saved to {base_path}/models")
+        
+        logs = {
+            'avg_rewards': np.array(self.log_avg_rewards),
+            'losses': np.array(self.log_losses),
+            'all_rewards': np.array(self.log_all_rewards),
+        }
+        if self.baseline_on:
+            logs['baselines'] = np.array(self.log_baselines)
+        
+        np.savez(os.path.join(base_path, 'logs', 'training_logs.npz'), **logs)
         
         run_info = {
             'algorithm': 'reinforce',

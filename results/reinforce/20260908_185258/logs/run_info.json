@@ -1,0 +1,14 @@
+{
+  "algorithm": "reinforce",
+  "config": {
+    "baseline_on": false,
+    "baseline": 0.0,
+    "baseline_momentum": null,
+    "entropy": false,
+    "gamma": 0.99,
+    "learning_rate": 0.001,
+    "episodes_per_batch": 50,
+    "num_episodes": 2000,
+    "hidden_units": 128
+  }
+}
