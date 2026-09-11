@@ -8,8 +8,8 @@ import json
 class PolicyNetwork(tf.keras.Model):
     def __init__(self, env, hidden_units):
         super(PolicyNetwork, self).__init__()
-        self.dense1 = layers.Dense(hidden_units, activation='relu')
-        self.dense2 = layers.Dense(hidden_units, activation='relu') # Added a 2nd hidden layer for complex locomotion
+        self.dense1 = layers.Dense(hidden_units, activation='tanh')
+        self.dense2 = layers.Dense(hidden_units, activation='tanh')
         self.mu_layer = tf.keras.layers.Dense(env.action_space.shape[0], activation=None)
         self.sigma_layer = tf.keras.layers.Dense(env.action_space.shape[0], activation='softplus')
         

@@ -1,8 +1,8 @@
 import argparse
 import yaml
 from algorithms.reinforce import REINFORCE
-# from algorithms.actor_critic import ActorCritic
-# from algorithms.ppo import PPO
+from algorithms.actor_critic import ActorCritic
+from algorithms.ppo import PPO
 import gymnasium as gym
 from datetime import datetime
 
@@ -33,10 +33,10 @@ def main():
     
     if args.algorithm == 'reinforce':
         agent = REINFORCE(env, **config)
-    # elif args.algorithm == 'actor_critic':
-    #     agent = ActorCritic(env)
-    # elif args.algorithm == 'ppo':
-    #     agent = PPO(env)
+    elif args.algorithm == 'actor_critic':
+        agent = ActorCritic(env, **config)
+    elif args.algorithm == 'ppo':
+        agent = PPO(env, **config)
     
     rewards = agent.train()
     agent.save(f'results/{args.algorithm}/{timestamp}')
