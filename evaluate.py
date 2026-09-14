@@ -6,6 +6,7 @@ import os
 import json
 import argparse
 from algorithms.reinforce import PolicyNetwork
+from algorithms.actor_critic import ActorCriticNetwork
 from algorithms.ppo import ActorNetwork
 
 
@@ -25,7 +26,8 @@ if args.algorithm == 'reinforce':
     policy = PolicyNetwork(env, run_info['config']['hidden_units'])
     modelName = f"reinforce{'_baseline' if run_info['config']['baseline'] else ''}_batch{run_info['config']['episodes_per_batch']}.weights.h5"
 elif args.algorithm == 'actor_critic':
-    pass
+    policy = ActorCriticNetwork(env.action_space.shape[0], run_info['config']['hidden_units'])
+    modelName = "actor_critic.weights.h5"
 elif args.algorithm == 'ppo':
     policy = ActorNetwork(env.action_space.shape[0], run_info['config']['hidden_units'])
     modelName = "actor.weights.h5"
@@ -41,7 +43,10 @@ eval_reward = 0
 
 while not eval_done:
     state_input = np.array(eval_state, dtype=np.float32).reshape(1, -1)
-    mu, _ = policy(state_input)  # Exploit the learned center point (no sampling noise)
+    if args.algorithm == 'actor_critic':
+        mu, _, _ = policy(state_input)
+    else:
+        mu, _ = policy(state_input)  # Exploit the learned center point (no sampling noise)
     eval_action = np.tanh(mu.numpy()[0])
     
     eval_state, reward, terminated, truncated, _ = env.step(eval_action)

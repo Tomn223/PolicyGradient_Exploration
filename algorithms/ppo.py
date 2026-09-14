@@ -60,6 +60,7 @@ class PPO:
         self.gamma = gamma
         self.lam = lam
         self.clip_epsilon = clip_epsilon
+        self.learning_rate = learning_rate
         self.entropy_coef = entropy_coef
         self.value_coef = value_coef
         self.num_timesteps = num_timesteps
@@ -270,6 +271,7 @@ class PPO:
         self.critic.save_weights(os.path.join(base_path, 'models', 'critic.weights.h5'))
         
         logs = {
+            'episode_rewards': np.array(self.log_episode_rewards),
             'actor_losses': np.array(self.log_actor_losses),
             'critic_losses': np.array(self.log_critic_losses),
             'entropies': np.array(self.log_entropies),
@@ -282,6 +284,7 @@ class PPO:
                 'gamma': self.gamma,
                 'lam': self.lam,
                 'clip_epsilon': self.clip_epsilon,
+                'learning_rate': self.learning_rate,
                 'entropy_coef': self.entropy_coef,
                 'value_coef': self.value_coef,
                 'num_timesteps': self.num_timesteps,
@@ -289,6 +292,7 @@ class PPO:
                 'num_minibatches': self.num_minibatches,
                 'hidden_units': self.hidden_units,
                 'max_grad_norm': self.max_grad_norm,
+                'total_timesteps': self.total_timesteps
             }
         }
         with open(os.path.join(base_path, 'logs', 'run_info.json'), 'w') as f:

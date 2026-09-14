@@ -1,14 +1,12 @@
 import collections
 import gymnasium as gym
 import numpy as np
-import statistics
+# import statistics
 import tensorflow as tf
-import tqdm
-import os
-
+import json
 from matplotlib import pyplot as plt
 from tensorflow.keras import layers
-from typing import Any, List, Sequence, Tuple
+import os
 
 class ActorCriticNetwork(tf.keras.Model):
     def __init__(self, action_dim, hidden_units=128):
@@ -52,214 +50,134 @@ class ActorCritic:
         
     
     
-    def env_step(self, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    
+    def env_step(self, action: np.ndarray):
         state, reward, terminated, truncated, info = self.env.step(action)
         done = terminated or truncated
         return (state.astype(np.float32), np.array(reward, np.float32), np.array(done, np.int32))
 
-    def run_episode(self, initial_state, model):
+    def train_step(self, state, raw_action, reward, next_state, done):
+        state = tf.cast(state, tf.float32)
+        raw_action = tf.cast(raw_action, tf.float32)
+        next_state = tf.cast(next_state, tf.float32)
         
-        action_log_probs = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        values = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        rewards = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        
-        state = initial_state
-        
-        while True:
-            state_input = tf.reshape(tf.cast(state, tf.float32), [1, -1])
+        with tf.GradientTape() as tape:
+            mu, sigma, value = self.model(state)
+            value = tf.squeeze(value)
             
-            mu, sigma, value = model(state_input)
-            mu = tf.squeeze(mu, axis=0)
-            sigma = tf.squeeze(sigma, axis=0)
+            _, _, next_value = self.model(next_state)
+            next_value = tf.squeeze(next_value)
             
-            raw_action = mu + sigma * tf.random.normal(shape=tf.shape(mu))
-            env_action = tf.math.tanh(raw_action)
-            
-            values = values.write(t, tf.squeeze(value))
+            td_target = tf.stop_gradient(
+                reward + self.gamma * next_value * (1.0 - float(done))
+            )
+            td_error = td_target - value
             
             variance = tf.square(sigma)
-            pi_const = tf.constant(2.0 * 3.14159265359, dtype=tf.float32)
-            gaussian_log_prob = -0.5 * (tf.square(raw_action - mu) / variance + tf.math.log(pi_const * variance))
-            # tanh_u = tf.math.tanh(raw_action)
-            # squash_correction = tf.math.log(tf.constant(1.0, dtype=tf.float32) - tf.square(env_action) + tf.constant(1e-6, dtype=tf.float32))
-            squash_correction = tf.math.log(1.0 - tf.square(env_action) + 1e-6)
-            corrected_log_prob = gaussian_log_prob - squash_correction
-            action_log_prob = tf.reduce_sum(corrected_log_prob)
+            pi_const = tf.constant(2.0 * np.pi, dtype=tf.float32)
+            gaussian_log_probs = -0.5 * (tf.square(raw_action - mu) / variance +
+                                        tf.math.log(pi_const * variance))
+            squash_correction = tf.math.log(
+                tf.constant(1.0, dtype=tf.float32) - 
+                tf.square(tf.math.tanh(raw_action)) + 
+                tf.constant(1e-6, dtype=tf.float32)
+            )
+            corrected_log_probs = gaussian_log_probs - squash_correction
+            action_log_prob = tf.reduce_sum(corrected_log_probs)
             
-            action_log_probs = action_log_probs.write(t, action_log_prob)
-            
-            state, reward, done = self.env_step(env_action.numpy())
-            
-            rewards = rewards.write(t, reward)
-            
-            if tf.cast(done, tf.bool):
-                break
-            
-        action_log_probs = action_log_probs.stack()
-        values = values.stack()
-        rewards = rewards.stack()
-
-        return action_log_probs, values, rewards
-
-    def get_expected_return(self, rewards):
+            actor_loss = -(action_log_prob * tf.stop_gradient(td_error))
+            critic_loss = self.huber_loss(tf.reshape(td_target, [1]), tf.reshape(value, [1]))
+            loss = actor_loss + self.critic_coef * critic_loss
         
-        n = tf.shape(rewards)[0]
-        returns = tf.TensorArray(dtype=tf.float32, size=n)
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
         
-        rewards = tf.cast(rewards[::-1], dtype=tf.float32)
-        discounted_sum = tf.constant(0.0)
-        discounted_sum_shape = discounted_sum.shape
-        for i in tf.range(n):
-            reward = rewards[i]
-            discounted_sum = reward + self.gamma * discounted_sum
-            discounted_sum.set_shape(discounted_sum_shape)
-            returns = returns.write(i, discounted_sum)
-        returns = returns.stack()[::-1]
-
-        # if standardize:
-        #     returns = ((returns - tf.math.reduce_mean(returns)) /
-        #             (tf.math.reduce_std(returns) + eps))
-
-        return returns
-    
-    def compute_loss(
-        self, 
-        action_log_probs: tf.Tensor,
-        values: tf.Tensor,
-        returns: tf.Tensor) -> tf.Tensor:
-        """Computes the combined Actor-Critic loss."""
-
-        advantage = returns - tf.stop_gradient(values)
-
-        advantage = (
-            advantage - tf.reduce_mean(advantage)
-        ) / (tf.math.reduce_std(advantage) + 1e-8)
-
-        actor_loss = -tf.math.reduce_sum(action_log_probs * advantage)
-
-        critic_loss = huber_loss(values, returns)
-
-        return actor_loss + critic_loss
-
-    # @tf.function
-    # def train_step(
-    #     self,
-    #     initial_state: tf.Tensor,
-    #     model: tf.keras.Model,
-    #     optimizer: tf.keras.optimizers.Optimizer,
-    #     gamma: float,
-    #     max_steps_per_episode: int) -> tf.Tensor:
-        
-    #     """Runs a model training step."""
-
-    #     with tf.GradientTape() as tape:
-
-    #         # Run the model for one episode to collect training data
-    #         action_log_probs, values, rewards = run_episode(
-    #             initial_state, model, max_steps_per_episode)
-
-    #         # Calculate the expected returns
-    #         returns = get_expected_return(rewards, gamma)
-
-    #         # Convert training data to appropriate TF tensor shapes
-    #         action_log_probs, values, returns = [
-    #             tf.expand_dims(x, 1) for x in [action_log_probs, values, returns]]
-
-    #         # Calculate the loss values to update our network
-    #         loss = compute_loss(action_log_probs, values, returns)
-
-    #     # Compute the gradients from the loss
-    #     grads = tape.gradient(loss, model.trainable_variables)
-
-    #     # Apply the gradients to the model's parameters
-    #     optimizer.apply_gradients(zip(grads, model.trainable_variables))
-
-    #     episode_reward = tf.math.reduce_sum(rewards)
-
-    #     return episode_reward
+        return loss, actor_loss, critic_loss, tf.abs(td_error)
 
     def train(self):
-        
         self.log_episode_rewards = []
-        print_interval = 10
-        
-        for i in self.num_episodes:
-            
-            
-            state, info = self.env.reset()
-            state = tf.constant(state, dtype=tf.float32)
-            # episode_reward = int(train_step(
-            #     initial_state, model, optimizer, gamma, max_steps_per_episode))
+        self.log_losses = []
+        self.log_actor_losses = []
+        self.log_critic_losses = []
+        self.log_td_errors = []
 
-            # episodes_reward.append(episode_reward)
-            # running_reward = statistics.mean(episodes_reward)
-
-            # t.set_postfix(
-            #     episode_reward=episode_reward, running_reward=running_reward)
+        for i in range(self.num_episodes):
+            state, _ = self.env.reset()
             done = False
             episode_reward = 0
-            
+            episode_losses = []
+            episode_actor_losses = []
+            episode_critic_losses = []
+            episode_td_errors = []
+
             while not done:
-                with tf.GradientTape() as tape:
-                    # Forward pass
-                    state_input = tf.reshape(tf.cast(state, tf.float32), [1, -1])
-                    mu, sigma, value = self.model(state_input)
-                    mu = tf.squeeze(mu, axis=0)
-                    sigma = tf.squeeze(sigma, axis=0)
-                    value = tf.squeeze(value, axis=0)
-                    
-                    # Sample action
-                    raw_action = mu + sigma * tf.random.normal(shape=tf.shape(mu))
-                    env_action = tf.math.tanh(raw_action)
-                    
-                    # Step environment
-                    next_state, reward, done = self.env_step(env_action.numpy())
-                    episode_reward += float(reward)
-                    
-                    # Compute TD target
-                    next_state_input = tf.reshape(tf.cast(next_state, tf.float32), [1, -1])
-                    _, _, next_value = self.model(next_state_input)
-                    
-                    next_state_value = tf.reshape(tf.constant(0.0), [1]) if done else tf.squeeze(next_value, axis=0)
-                    next_state_value = tf.stop_gradient(next_state_value)
-                    td_target = tf.stop_gradient(reward + self.gamma * next_state_value)
-                    td_error = td_target - value
-                    
-                    # Compute actor loss
-                    variance = tf.square(sigma)
-                    pi_const = tf.constant(2.0 * 3.14159265359, dtype=tf.float32)
-                    gaussian_log_prob = -0.5 * (tf.square(raw_action - mu) / variance + tf.math.log(pi_const * variance))
-                    # tanh_u = tf.math.tanh(raw_action)
-                    # squash_correction = tf.math.log(tf.constant(1.0, dtype=tf.float32) - tf.square(env_action) + tf.constant(1e-6, dtype=tf.float32))
-                    squash_correction = tf.math.log(1.0 - tf.square(env_action) + 1e-6)
-                    corrected_log_prob = gaussian_log_prob - squash_correction
-                    action_log_prob = tf.reduce_sum(corrected_log_prob)
-                    
-                    actor_loss = -(action_log_prob * tf.stop_gradient(td_error))
-                    
-                    # Compute critic loss
-                    critic_loss = self.huber_loss(value, td_target)
-                    
-                    loss = actor_loss + self.critic_coef*critic_loss
-                    
-                grads = tape.gradient(loss, self.model.trainable_variables)
-                    
-                self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+                state_input = np.array(state, dtype=np.float32).reshape(1, -1)
+                
+                # Sample action outside the tape
+                mu, sigma, _ = self.model(state_input)
+                mu = mu.numpy()[0]
+                sigma = sigma.numpy()[0]
+                raw_action = mu + sigma * np.random.normal(size=mu.shape)
+                env_action = np.tanh(raw_action)
+                
+                next_state, reward, terminated, truncated, _ = self.env.step(env_action)
+                done = terminated or truncated
+                episode_reward += float(reward)
+                
+                loss, actor_loss, critic_loss, td_error = self.train_step(
+                    state_input,
+                    raw_action.reshape(1, -1),
+                    np.float32(reward),
+                    np.array(next_state, dtype=np.float32).reshape(1, -1),
+                    done
+                )
+                
+                episode_losses.append(float(loss))
+                episode_actor_losses.append(float(actor_loss))
+                episode_critic_losses.append(float(critic_loss))
+                episode_td_errors.append(float(td_error))
                 
                 state = next_state
-                
+
             self.log_episode_rewards.append(episode_reward)
+            self.log_losses.append(np.mean(episode_losses))
+            self.log_actor_losses.append(np.mean(episode_actor_losses))
+            self.log_critic_losses.append(np.mean(episode_critic_losses))
+            self.log_td_errors.append(np.mean(episode_td_errors))
 
-            if (i + 1) % print_interval == 0:
-                print(
-                    f"\nEpisode {i+1}: "
-                    f"Average Reward={np.mean(self.log_episode_rewards[-10:]):.2f}"
-                )
-
-            # Show the average episode reward every 10 episodes
-            # if i != 0 and i % 10 == 0:
-            #   print(f'Episode {i}: average reward: {statistics.mean(list(episodes_reward)[-10:])}')
-
-    def save(self):
-        pass
+            if (i + 1) % 10 == 0:
+                print(f"Episode {i+1}: "
+                    f"Avg Reward={np.mean(self.log_episode_rewards[-10:]):.2f}, "
+                    f"Loss={np.mean(self.log_losses[-10:]):.4f}")
+    
+    def save(self, base_path):
+        os.makedirs(os.path.join(base_path, 'models'), exist_ok=True)
+        os.makedirs(os.path.join(base_path, 'logs'), exist_ok=True)
+        os.makedirs(os.path.join(base_path, 'curves'), exist_ok=True)
+        
+        self.model.save_weights(
+            os.path.join(base_path, 'models', 'actor_critic.weights.h5')
+        )
+        
+        logs = {
+            'episode_rewards': np.array(self.log_episode_rewards),
+            'losses': np.array(self.log_losses),
+            'actor_losses': np.array(self.log_actor_losses),
+            'critic_losses': np.array(self.log_critic_losses),
+            'td_errors': np.array(self.log_td_errors),
+        }
+        np.savez(os.path.join(base_path, 'logs', 'training_logs.npz'), **logs)
+        
+        run_info = {
+            'algorithm': 'actor_critic',
+            'config': {
+                'gamma': self.gamma,
+                'learning_rate': self.learning_rate,
+                'critic_coef': self.critic_coef,
+                'num_episodes': self.num_episodes,
+                'hidden_units': self.hidden_units,
+            }
+        }
+        with open(os.path.join(base_path, 'logs', 'run_info.json'), 'w') as f:
+            json.dump(run_info, f, indent=2)
+        
+        print(f"Model and logs saved to {base_path}")

@@ -1,0 +1,17 @@
+{
+  "algorithm": "ppo",
+  "config": {
+    "gamma": 0.99,
+    "lam": 0.95,
+    "clip_epsilon": 0.2,
+    "learning_rate": 0.0005,
+    "entropy_coef": 0.0,
+    "value_coef": 0.5,
+    "num_timesteps": 2048,
+    "update_epochs": 10,
+    "num_minibatches": 32,
+    "hidden_units": 64,
+    "max_grad_norm": 0.5,
+    "total_timesteps": 1000000
+  }
+}

@@ -11,7 +11,7 @@ def load_run_info(result_dir):
     with open(f"{result_dir}/logs/run_info.json", "r") as file:
         return json.load(file)
 
-def plot_batch_rewards(result_dir, window=10):
+def plot_reinforce_batch_rewards(result_dir, window=10):
     logs = load_logs(result_dir)
     run_info = load_run_info(result_dir)
     
@@ -44,7 +44,7 @@ def plot_batch_rewards(result_dir, window=10):
     plt.savefig(f'{result_dir}/curves/Batch_reward_curve.png', dpi=150)
     plt.show()
 
-def plot_raw_rewards(result_dir):
+def plot_reinforce_raw_rewards(result_dir):
     logs = load_logs(result_dir)
     all_rewards = logs['all_rewards']
     
@@ -57,7 +57,7 @@ def plot_raw_rewards(result_dir):
     plt.savefig(f'{result_dir}/curves/raw_reward.png', dpi=150)
     plt.show()
 
-def plot_baseline(result_dir):
+def plot_reinforce_baseline(result_dir):
     logs = load_logs(result_dir)
     run_info = load_run_info(result_dir)
     
@@ -91,20 +91,55 @@ def plot_baseline(result_dir):
     plt.savefig(f'{result_dir}/curves/baseline_curve.png', dpi=150)
     plt.show()
     
+def plot_actor_critic_rewards(result_dir, window=10):
+    logs = load_logs(result_dir)
+    run_info = load_run_info(result_dir)
+    episode_rewards = logs['episode_rewards']
+    
+    smoothed = np.convolve(episode_rewards, 
+                            np.ones(window)/window, 
+                            mode='valid')
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(episode_rewards,
+            linewidth=2.5,
+            color='steelblue',
+            label=f'Per Episode')
+
+    smoothed_x = np.arange(window//2, window//2 + len(smoothed))
+    plt.plot(smoothed_x, smoothed,
+            linewidth=1.5,
+            alpha=0.7,
+            color='orange',
+            label=f'Smoothed (Window = {window})')
+    
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.title('Actor Critic Training Curve')
+    plt.legend()
+    plt.savefig(f'{result_dir}/curves/Batch_reward_curve.png', dpi=150)
+    plt.show()
+    
+# def 
 def main():
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--logpath', type=str, required=True)
+    parser.add_argument('--algorithm', '-a', type=str, required=True)
+    parser.add_argument('--logpath', '-l', type=str, required=True)
     args = parser.parse_args()
     
-    result_dir = os.path.join('results', args.logpath)
-    
+    result_dir = args.logpath
     run_info = load_run_info(result_dir)
     
-    plot_batch_rewards(result_dir)
-    plot_raw_rewards(result_dir)
-    if run_info["config"]["baseline_on"]:
-        plot_baseline(result_dir)
+    if args.algorithm == 'reinforce':
+        plot_reinforce_batch_rewards(result_dir)
+        plot_reinforce_raw_rewards(result_dir)
+        if run_info["config"]["baseline_on"]:
+            plot_reinforce_baseline(result_dir)
+    elif args.algorithm == 'actor_critic':
+        plot_actor_critic_rewards(result_dir)
+    elif args.algorithm == 'ppo':
+        pass
     
 if __name__ == '__main__':
     main()
