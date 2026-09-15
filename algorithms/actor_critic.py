@@ -21,11 +21,11 @@ class ActorCriticNetwork(tf.keras.Model):
         x = self.common1(state)
         x = self.common2(x)
         actor_mu = self.actor_mu_layer(x)
-        actor_sigma = self.actor_sigma_layer(x) + 1e-5 # Add small num to sigma to prevent div by 0
+        actor_sigma = self.actor_sigma_layer(x) + 1e-3 # Add small num to sigma to prevent div by 0
         value = self.critic(x)
         
         return actor_mu, actor_sigma, value
-    
+
 class ActorCritic:
     
     def __init__(
@@ -122,7 +122,7 @@ class ActorCritic:
                 next_state, reward, terminated, truncated, _ = self.env.step(env_action)
                 done = terminated or truncated
                 episode_reward += float(reward)
-                
+            
                 loss, actor_loss, critic_loss, td_error = self.train_step(
                     state_input,
                     raw_action.reshape(1, -1),
@@ -144,10 +144,10 @@ class ActorCritic:
             self.log_critic_losses.append(np.mean(episode_critic_losses))
             self.log_td_errors.append(np.mean(episode_td_errors))
 
-            if (i + 1) % 10 == 0:
+            if (i + 1) % 5 == 0:
                 print(f"Episode {i+1}: "
-                    f"Avg Reward={np.mean(self.log_episode_rewards[-10:]):.2f}, "
-                    f"Loss={np.mean(self.log_losses[-10:]):.4f}")
+                    f"Avg Reward={np.mean(self.log_episode_rewards[-5:]):.2f}, "
+                    f"Loss={np.mean(self.log_losses[-5:]):.4f}")
     
     def save(self, base_path):
         os.makedirs(os.path.join(base_path, 'models'), exist_ok=True)

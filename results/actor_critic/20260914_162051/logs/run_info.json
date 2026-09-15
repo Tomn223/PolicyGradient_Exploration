@@ -1,0 +1,10 @@
+{
+  "algorithm": "actor_critic",
+  "config": {
+    "gamma": 0.99,
+    "learning_rate": 0.0003,
+    "critic_coef": 0.5,
+    "num_episodes": 10,
+    "hidden_units": 128
+  }
+}

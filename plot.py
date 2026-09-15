@@ -120,7 +120,41 @@ def plot_actor_critic_rewards(result_dir, window=10):
     plt.savefig(f'{result_dir}/curves/Batch_reward_curve.png', dpi=150)
     plt.show()
     
-# def 
+def plot_ppo_rewards(result_dir, window=10):
+    logs = load_logs(result_dir)
+    run_info = load_run_info(result_dir)
+    episode_rewards = logs['episode_rewards']
+    
+    smoothed = np.convolve(episode_rewards, 
+                            np.ones(window)/window, 
+                            mode='valid')
+    smoothed_x = np.arange(window//2, window//2 + len(smoothed))
+    
+    bigger_window = window * 5
+    more_smoothed = np.convolve(episode_rewards, 
+                            np.ones(bigger_window)/bigger_window, 
+                            mode='valid')
+    more_smoothed_x = np.arange(bigger_window//2, bigger_window//2 + len(more_smoothed))
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(smoothed_x, smoothed,
+            linewidth=2.5,
+            color='steelblue',
+            label=f'Per Episode')
+
+    plt.plot(more_smoothed_x, more_smoothed,
+            linewidth=1.5,
+            alpha=0.7,
+            color='orange',
+            label=f'Smoothed (Window = {window})')
+    
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.title('Actor Critic Training Curve')
+    plt.legend()
+    plt.savefig(f'{result_dir}/curves/Batch_reward_curve.png', dpi=150)
+    plt.show()
+    
 def main():
     
     parser = argparse.ArgumentParser()
@@ -139,7 +173,7 @@ def main():
     elif args.algorithm == 'actor_critic':
         plot_actor_critic_rewards(result_dir)
     elif args.algorithm == 'ppo':
-        pass
+        plot_ppo_rewards(result_dir)
     
 if __name__ == '__main__':
     main()
