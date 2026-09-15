@@ -5,7 +5,7 @@ Implementations of REINFORCE, Actor-Critic, and PPO with TensorFlow trained on H
   <br>
   <img src="results/ppo/20260914_105313/videos/rl-video-episode-0-sample.gif" width="600">
   <br>
-  <em>Example evaluation of a model trained with PPO</em>
+  <em>Example evaluation of a model trained with ppo.py</em>
   <br>
 </p>
 
