@@ -159,10 +159,10 @@ def main():
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--algorithm', '-a', type=str, required=True)
-    parser.add_argument('--logpath', '-l', type=str, required=True)
+    parser.add_argument('--path', '-p', type=str, required=True)
     args = parser.parse_args()
     
-    result_dir = args.logpath
+    result_dir = args.path
     run_info = load_run_info(result_dir)
     
     if args.algorithm == 'reinforce':

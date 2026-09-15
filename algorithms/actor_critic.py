@@ -26,6 +26,38 @@ class ActorCriticNetwork(tf.keras.Model):
         
         return actor_mu, actor_sigma, value
 
+class ActorNetwork(tf.keras.Model):
+    def __init__(self, action_dim, hidden_units):
+        super(ActorNetwork, self).__init__()
+        self.dense1 = layers.Dense(hidden_units, activation='tanh')
+        self.dense2 = layers.Dense(hidden_units, activation='tanh')
+        self.mu_layer = layers.Dense(action_dim, activation=None)
+        # State-independent log std — standard PPO practice
+        self.log_std = tf.Variable(
+            tf.zeros(action_dim), 
+            trainable=True, 
+            name='log_std'
+        )
+    
+    def call(self, state):
+        x = self.dense1(state)
+        x = self.dense2(x)
+        mu = self.mu_layer(x)
+        std = tf.exp(self.log_std)
+        return mu, std
+
+class CriticNetwork(tf.keras.Model):
+    def __init__(self, hidden_units):
+        super(CriticNetwork, self).__init__()
+        self.dense1 = layers.Dense(hidden_units, activation='tanh')
+        self.dense2 = layers.Dense(hidden_units, activation='tanh')
+        self.value_layer = layers.Dense(1, activation=None)
+    
+    def call(self, state):
+        x = self.dense1(state)
+        x = self.dense2(x)
+        return self.value_layer(x)
+    
 class ActorCritic:
     
     def __init__(
@@ -44,7 +76,10 @@ class ActorCritic:
         self.critic_coef = critic_coef
         self.hidden_units = hidden_units
         
-        self.model = ActorCriticNetwork(env.action_space.shape[0], hidden_units)
+        self.actor = ActorNetwork(env.action_space.shape[0], hidden_units)
+        self.critic = CriticNetwork(hidden_units)
+
+        # self.model = ActorCriticNetwork(env.action_space.shape[0], hidden_units)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         self.huber_loss = tf.keras.losses.Huber()
         
@@ -61,10 +96,11 @@ class ActorCritic:
         next_state = tf.cast(next_state, tf.float32)
         
         with tf.GradientTape() as tape:
-            mu, sigma, value = self.model(state)
+            mu, sigma = self.actor(state)
+            value = self.critic(state)
             value = tf.squeeze(value)
             
-            _, _, next_value = self.model(next_state)
+            next_value = self.critic(next_state)
             next_value = tf.squeeze(next_value)
             
             td_target = tf.stop_gradient(
@@ -88,8 +124,8 @@ class ActorCritic:
             critic_loss = self.huber_loss(tf.reshape(td_target, [1]), tf.reshape(value, [1]))
             loss = actor_loss + self.critic_coef * critic_loss
         
-        grads = tape.gradient(loss, self.model.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+        grads = tape.gradient(loss, self.actor.trainable_variables + self.critic.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.actor.trainable_variables + self.critic.trainable_variables))
         
         return loss, actor_loss, critic_loss, tf.abs(td_error)
 
@@ -113,7 +149,7 @@ class ActorCritic:
                 state_input = np.array(state, dtype=np.float32).reshape(1, -1)
                 
                 # Sample action outside the tape
-                mu, sigma, _ = self.model(state_input)
+                mu, sigma = self.actor(state_input)
                 mu = mu.numpy()[0]
                 sigma = sigma.numpy()[0]
                 raw_action = mu + sigma * np.random.normal(size=mu.shape)
@@ -154,9 +190,12 @@ class ActorCritic:
         os.makedirs(os.path.join(base_path, 'logs'), exist_ok=True)
         os.makedirs(os.path.join(base_path, 'curves'), exist_ok=True)
         
-        self.model.save_weights(
-            os.path.join(base_path, 'models', 'actor_critic.weights.h5')
-        )
+        # self.model.save_weights(
+        #     os.path.join(base_path, 'models', 'actor_critic.weights.h5')
+        # )
+        
+        self.actor.save_weights(os.path.join(base_path, 'models', 'actor.weights.h5'))
+        self.critic.save_weights(os.path.join(base_path, 'models', 'critic.weights.h5'))
         
         logs = {
             'episode_rewards': np.array(self.log_episode_rewards),
