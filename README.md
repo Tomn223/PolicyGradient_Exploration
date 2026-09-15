@@ -1,6 +1,8 @@
 # Policy Gradient Exploration
 Implementations of REINFORCE, Actor-Critic, and PPO with TensorFlow trained on HalfCheetah-v5
 
+<video src="results/ppo/20260914_105313/videos/rl-video-episode-0.mp4" width="320" height="240" controls></video>
+
 ## Summary of Results
 
 ## Project Structure
