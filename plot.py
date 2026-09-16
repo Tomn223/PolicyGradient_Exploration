@@ -138,7 +138,7 @@ def plot_ppo_rewards(result_dir, window=10):
     
     plt.figure(figsize=(10, 5))
     plt.plot(smoothed_x, smoothed,
-            linewidth=2.5,
+            linewidth=2.0,
             color='steelblue',
             label=f'Per Episode')
 
@@ -150,9 +150,9 @@ def plot_ppo_rewards(result_dir, window=10):
     
     plt.xlabel('Episode')
     plt.ylabel('Reward')
-    plt.title('Actor Critic Training Curve')
+    plt.title('PPO Training Curve')
     plt.legend()
-    plt.savefig(f'{result_dir}/curves/Batch_reward_curve.png', dpi=150)
+    plt.savefig(f'{result_dir}/curves/reward_curve.png', dpi=150)
     plt.show()
     
 def main():
