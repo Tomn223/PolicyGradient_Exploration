@@ -1,15 +1,42 @@
 # Policy Gradient Exploration
 Implementations of REINFORCE, Actor-Critic, and PPO from scratch with TensorFlow trained on HalfCheetah-v5
 
-<p align="center">
+<div align="center">
   <br>
   <img src="results/ppo/20260914_105313/videos/rl-video-episode-0-sample.gif" width="600">
   <br>
   <em>Example evaluation of a model trained with ppo.py</em>
   <br>
-</p>
+</div>
 
 ## Summary of Results
+PPO achieved the highest mean evaluation reward and also had the least variance. REINFORCE with baseline showed consistent but slower learning, while Actor Critic was very difficult to reliably train due to online single step updates.
+
+<br>
+<div align="center">
+  
+| Algorithm | Mean Reward | Standard Deviation | 
+|-----------|-------------|---------|
+| REINFORCE | 266.86 | 93.60 |
+| Actor Critic | 198.12 | 58.61 |
+| PPO | 3816.24 | 51.24 |
+
+<em>Algorithm's best mean reward and standard deviation over 10 evaluation runs</em>
+<br>
+</div>
+
+<br>
+
+<div align="center">
+  <img src="results/reinforce/20260909_161536/curves/Batch_reward_curve.png" width="40%" />
+  <img src="results/actor_critic/20260915_114044/curves/Batch_reward_curve.png" width="40%" />
+  <img src="results/ppo/20260914_105313/curves/reward_curve.png" width="40%" />
+
+<em>Training Curves</em>
+<br>
+</div>
+
+
 
 ## Project Structure
 ```
